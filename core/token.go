@@ -1,7 +1,7 @@
 package core
 
 import (
-	"OmniSwapParser/config"
+	"oparse/config"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"

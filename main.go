@@ -1,10 +1,10 @@
 package main
 
 import (
-	"OmniSwapParser/config"
-	"OmniSwapParser/core"
 	"flag"
 	"fmt"
+	"oparse/config"
+	"oparse/core"
 	"sync"
 )
 

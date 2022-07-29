@@ -1,14 +1,14 @@
 package core
 
 import (
-	"OmniSwapParser/config"
-	"OmniSwapParser/xabi"
 	"context"
 	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
+	"oparse/config"
+	"oparse/xabi"
 	"strconv"
 	"strings"
 

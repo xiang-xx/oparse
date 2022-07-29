@@ -1,4 +1,4 @@
-module OmniSwapParser
+module oparse
 
 go 1.18
 
