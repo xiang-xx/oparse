@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"oparse/config"
-	"oparse/core"
 	"sync"
+
+	"github.com/xiang-xx/oparse/config"
+	"github.com/xiang-xx/oparse/core"
 )
 
 func main() {

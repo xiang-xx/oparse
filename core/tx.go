@@ -7,10 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"oparse/config"
-	"oparse/xabi"
 	"strconv"
 	"strings"
+
+	"github.com/xiang-xx/oparse/config"
+	"github.com/xiang-xx/oparse/xabi"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"

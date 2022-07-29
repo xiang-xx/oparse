@@ -1,4 +1,4 @@
-module oparse
+module github.com/xiang-xx/oparse
 
 go 1.18
 
