@@ -102,7 +102,6 @@ type MyReceipt struct {
 	// types.Receipt
 	ReturnCode string `json:"returnCode"`
 	ReturnData string `json:"returnData"`
-	Status     string `json:"status`
 }
 
 func ParseTxOnChain(chain *config.ChainInfo, txHash string, d bool) {
