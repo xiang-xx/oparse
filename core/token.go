@@ -12,6 +12,7 @@ type Token struct {
 	Name     string
 	Symbol   string
 	Decimals int
+	Address  string
 }
 
 var tokenCache map[string]Token
@@ -30,6 +31,7 @@ func getTokenInfo(client *ethclient.Client, chain *config.ChainInfo, tokenAddres
 			Name:     chain.CurrancySymbol,
 			Symbol:   chain.CurrancySymbol,
 			Decimals: 18,
+			Address:  tokenAddress.String(),
 		}, nil
 	}
 	instance, err := NewStore(tokenAddress, client)
@@ -51,6 +53,7 @@ func getTokenInfo(client *ethclient.Client, chain *config.ChainInfo, tokenAddres
 	token.Name = name
 	token.Symbol = symbol
 	token.Decimals = int(decimals)
+	token.Address = tokenAddress.String()
 	tokenCache[cacheKey] = token
 	return
 }

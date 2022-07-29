@@ -16,10 +16,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/fatih/color"
 	"github.com/shopspring/decimal"
 )
 
 const alignment = 25
+
+var withDetail = false
 
 // SoData 代表单笔 swap 数据，用于链路 swap 追踪
 type SoData struct {
@@ -75,10 +78,10 @@ type FromTokenSwapInputData struct {
 }
 
 type FromBalanceSwapInputData struct {
-	MinAmount *big.Int
-	Path      []common.Address
-	To        common.Address
-	Deadline  *big.Int
+	AmountOutMin *big.Int
+	Path         []common.Address
+	To           common.Address
+	Deadline     *big.Int
 }
 
 type SwapV3InputData struct {
@@ -93,7 +96,8 @@ type ExactInputParams struct {
 	AmountOutMinimum *big.Int
 }
 
-func ParseTxOnChain(chain *config.ChainInfo, txHash string) {
+func ParseTxOnChain(chain *config.ChainInfo, txHash string, d bool) {
+	withDetail = d
 	ctx := context.Background()
 	client, err := ethclient.Dial(chain.Rpc)
 	if err != nil {
@@ -104,9 +108,15 @@ func ParseTxOnChain(chain *config.ChainInfo, txHash string) {
 	hash := common.HexToHash(txHash)
 	tx, _, err := client.TransactionByHash(ctx, hash)
 	if err != nil {
+		if err.Error() == "not found" {
+			return
+		}
 		printError("get tx", err)
 		return
 	}
+
+	printLine()
+	printAlignLine("Chain", chain.ChainName)
 
 	receipt, err := client.TransactionReceipt(ctx, hash)
 	if err != nil {
@@ -169,9 +179,16 @@ func parseSoSwapViaStargate(client *ethclient.Client, method *abi.Method, method
 
 func printStargateData(fromChain, toChain *config.ChainInfo, stargateData StargateData) {
 	stargatePath := ""
+	var fromToken Token
 	for _, pool := range fromChain.StargatePool {
 		if pool.PoolId == int(stargateData.SrcStargatePoolId.Int64()) {
 			stargatePath = stargatePath + fmt.Sprintf("%s(%d)", pool.TokenName, pool.PoolId)
+			fromToken = Token{
+				Address:  pool.TokenAddress,
+				Symbol:   pool.TokenName,
+				Decimals: pool.Decimal,
+				Name:     pool.TokenName,
+			}
 		}
 	}
 
@@ -181,6 +198,9 @@ func printStargateData(fromChain, toChain *config.ChainInfo, stargateData Starga
 		}
 	}
 	printAlignLine("Stargate", stargatePath)
+	// min amount
+	printAlignLine("", alignString("MinAmount", 10)+formatToken(stargateData.MinAmount.String(), fromToken))
+	printAlignLine("", alignString("DstGas", 10)+stargateData.DstGasForSgReceive.String())
 }
 
 func parseSwapTokenGeneric(client *ethclient.Client, method *abi.Method, methodInput []byte) error {
@@ -213,23 +233,23 @@ func printSwapData(where string, chain *config.ChainInfo, swapData []SwapData) e
 		callTo := swapItem.CallTo.String()
 		for _, r := range chain.UniswapRouter {
 			if r.RouterAddress == callTo {
-				printSwapItem(chain, r, swapItem)
+				printSwapItem(where, chain, r, swapItem)
 			}
 		}
 	}
 	return nil
 }
 
-func printSwapItem(chain *config.ChainInfo, router config.UniswapRouter, swapItem SwapData) error {
+func printSwapItem(where string, chain *config.ChainInfo, router config.UniswapRouter, swapItem SwapData) error {
 	if router.Type == "IUniswapV2Router02" || router.Type == "IUniswapV2Router02AVAX" {
-		return printSwapV2Item(chain, router, swapItem)
+		return printSwapV2Item(where, chain, router, swapItem)
 	} else if router.Type == "ISwapRouter" {
-		return printSwapV3Item(chain, router, swapItem)
+		return printSwapV3Item(where, chain, router, swapItem)
 	}
 	return nil
 }
 
-func printSwapV2Item(chain *config.ChainInfo, router config.UniswapRouter, swapItem SwapData) error {
+func printSwapV2Item(where string, chain *config.ChainInfo, router config.UniswapRouter, swapItem SwapData) error {
 	var swapAbi *abi.ABI
 	if router.Type == "IUniswapV2Router02" {
 		swapAbi = &xabi.IUniswapV2Router02
@@ -247,6 +267,7 @@ func printSwapV2Item(chain *config.ChainInfo, router config.UniswapRouter, swapI
 	}
 
 	var swapPath []common.Address
+	var amoutOutMin *big.Int
 	if strings.HasPrefix(method.RawName, "swapExactTokens") {
 		res := &FromTokenSwapInputData{}
 		err = method.Inputs.Copy(res, inputValues)
@@ -254,6 +275,7 @@ func printSwapV2Item(chain *config.ChainInfo, router config.UniswapRouter, swapI
 			return err
 		}
 		swapPath = res.Path
+		amoutOutMin = res.AmountOutMin
 	} else {
 		res := &FromBalanceSwapInputData{}
 		err = method.Inputs.Copy(res, inputValues)
@@ -261,24 +283,33 @@ func printSwapV2Item(chain *config.ChainInfo, router config.UniswapRouter, swapI
 			return err
 		}
 		swapPath = res.Path
+		amoutOutMin = res.AmountOutMin
 	}
 	client, err := ethclient.Dial(chain.Rpc)
 	if err != nil {
 		return err
 	}
 	paths := []string{}
+	tokens := make([]Token, 0)
 	for _, tokenAddress := range swapPath {
 		token, err := getTokenInfo(client, chain, tokenAddress)
 		if err != nil {
 			return err
 		}
 		paths = append(paths, token.Symbol)
+		tokens = append(tokens, token)
 	}
-	printAlignLine("Swap", router.Name+"  "+strings.Join(paths, " -> "))
+	printAlignLine(where, router.Name+"  "+strings.Join(paths, " -> "))
+	printAlignLine("", "AmountOutMin  "+formatToken(amoutOutMin.String(), tokens[len(tokens)-1]))
+	if withDetail {
+		for _, token := range tokens {
+			printAlignLine("", alignString(token.Symbol, 7)+token.Address)
+		}
+	}
 	return nil
 }
 
-func printSwapV3Item(chain *config.ChainInfo, router config.UniswapRouter, swapItem SwapData) error {
+func printSwapV3Item(where string, chain *config.ChainInfo, router config.UniswapRouter, swapItem SwapData) error {
 	method, err := xabi.ISwapRouter.MethodById(swapItem.CallData[:4])
 	if err != nil {
 		return err
@@ -293,7 +324,33 @@ func printSwapV3Item(chain *config.ChainInfo, router config.UniswapRouter, swapI
 		return err
 	}
 
-	// todo decode path and fees
+	paths, fees := decodePath(res.ExactInputParams.Path)
+	client, err := ethclient.Dial(chain.Rpc)
+	if err != nil {
+		return err
+	}
+	pathContent := ""
+	tokens := make([]Token, 0)
+	for i, tokenAddres := range paths {
+		token, err := getTokenInfo(client, chain, tokenAddres)
+		if err != nil {
+			return err
+		}
+		if i > 0 {
+			pathContent = pathContent + fmt.Sprintf(" --(%.1f%%)--> %s", float32(fees[i-1])/1000, token.Symbol)
+		} else {
+			pathContent = pathContent + token.Symbol
+		}
+		tokens = append(tokens, token)
+	}
+
+	printAlignLine(where, router.Name+"  "+pathContent)
+	printAlignLine("", "AmountOutMin  "+formatToken(res.ExactInputParams.AmountOutMinimum.String(), tokens[len(tokens)-1]))
+	if withDetail {
+		for _, token := range tokens {
+			printAlignLine("", alignString(token.Symbol, 7)+token.Address)
+		}
+	}
 
 	return nil
 }
@@ -336,10 +393,11 @@ func printSoData(soData SoData) error {
 func formatToken(amount string, token Token) string {
 	a, _ := decimal.NewFromString(amount)
 	f, _ := a.Div(decimal.NewFromBigInt(big.NewInt(1), int32(token.Decimals))).Float64()
-	return fmt.Sprintf("%.10f %s", f, token.Symbol)
+	return fmt.Sprintf("%.15f %s", f, token.Symbol)
 }
 
 func printTxBaseInfo(chain *config.ChainInfo, tx *types.Transaction) {
+	printAlignLine("Tx Base Info", "")
 	printAlignLine("Gas Limit", strconv.Itoa(int(tx.Gas())))
 	printAlignLine("Gas Price", tx.GasPrice().String())
 	printAlignLine("Value", formatToken(tx.Value().String(), Token{
@@ -350,10 +408,15 @@ func printTxBaseInfo(chain *config.ChainInfo, tx *types.Transaction) {
 }
 
 func printAlignLine(left string, content string) {
-	for len(left) < alignment {
-		left = left + " "
+	left = alignString(left, alignment)
+	fmt.Println(left + color.HiBlueString("%s", content))
+}
+
+func alignString(s string, l int) string {
+	if len(s) < l {
+		s = s + strings.Repeat(" ", l-len(s))
 	}
-	fmt.Println(left + content)
+	return s
 }
 
 func printReceipt(receipt *types.Receipt) {
@@ -368,7 +431,7 @@ func printLine() {
 }
 
 func printError(where string, err error) {
-	fmt.Printf("%s err: %s\n", where, err)
+	fmt.Print(color.HiRedString("%s err: %s\n", where, err))
 }
 
 const (
@@ -397,5 +460,18 @@ func encodePath(path []common.Address, fees []int) (encoded []byte, err error) {
 }
 
 func decodePath(pathByte []byte) ([]common.Address, []int) {
-	return nil, nil // todo
+	paths := make([]common.Address, 0)
+	fees := make([]int, 0)
+	// 20 字节 address
+	for i := 0; i < len(pathByte); {
+		// 读取 path
+		paths = append(paths, common.BytesToAddress(pathByte[i:i+AddrSize]))
+		i = i + AddrSize
+		if i < len(pathByte) {
+			feeBytes := common.TrimLeftZeroes(pathByte[i : i+FeeSize])
+			fees = append(fees, int(big.NewInt(0).SetBytes(feeBytes).Int64()))
+			i += FeeSize
+		}
+	}
+	return paths, fees
 }
