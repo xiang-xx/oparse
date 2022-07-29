@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/fatih/color"
 	"github.com/shopspring/decimal"
 )
@@ -97,6 +98,13 @@ type ExactInputParams struct {
 	AmountOutMinimum *big.Int
 }
 
+type MyReceipt struct {
+	// types.Receipt
+	ReturnCode string `json:"returnCode"`
+	ReturnData string `json:"returnData"`
+	Status     string `json:"status`
+}
+
 func ParseTxOnChain(chain *config.ChainInfo, txHash string, d bool) {
 	withDetail = d
 	ctx := context.Background()
@@ -126,7 +134,7 @@ func ParseTxOnChain(chain *config.ChainInfo, txHash string, d bool) {
 
 	printLine()
 	printTxBaseInfo(chain, tx)
-	printReceipt(receipt)
+	printReceipt(receipt, chain, hash)
 	printLine()
 
 	inputData := tx.Data()
@@ -420,11 +428,37 @@ func alignString(s string, l int) string {
 	return s
 }
 
-func printReceipt(receipt *types.Receipt) {
+func printReceipt(receipt *types.Receipt, chain *config.ChainInfo, hash common.Hash) {
 	if nil == receipt {
 		return
 	}
 	printAlignLine("Status", strconv.Itoa(int(receipt.Status)))
+
+	if receipt.Status == 0 {
+		ctx := context.Background()
+		var r *MyReceipt
+		rpcClient, _ := rpc.DialContext(context.Background(), chain.Rpc)
+		err := rpcClient.CallContext(ctx, &r, "eth_getTransactionReceipt", hash)
+		if err != nil {
+			printError("eth_getTransactionReceipt", err)
+		}
+		returnData, err := hex.DecodeString(strings.TrimPrefix(r.ReturnData, "0x"))
+		if err != nil {
+			printError("DecodeString", err)
+		}
+		// 4 bytes function
+		// 32 bytes offset
+		// 32 bytes length
+		// data
+		if len(returnData) < 68 {
+			return
+		}
+		lengthData := big.NewInt(0).SetBytes(common.TrimLeftZeroes(returnData[36:68])).Int64()
+		if len(returnData) < int(68+lengthData) {
+			return
+		}
+		printAlignLine("ErrorInfo", string(returnData[68:68+lengthData]))
+	}
 }
 
 func printLine() {
