@@ -7,7 +7,7 @@ Parse [OminiSwap](https://github.com/OmniBTC/OmniSwap) tx input data
 install
 
 ```sh
-go install github.com/xiang-xx/oparse
+go install github.com/xiang-xx/oparse@latest
 ```
 
 parse tx by tx hash
